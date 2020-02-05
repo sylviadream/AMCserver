@@ -1,63 +1,74 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.Text;
+
 using System.Windows.Forms;
 
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 using System.IO;
+using System.Threading.Tasks;
 
 namespace AMCserver
 {
     public partial class FormChatServer : Form         
     {
-         private Thread threadWatch = null;
+         
   
-        private Dictionary<string ,Socket> dict=new Dictionary<string, Socket>(); 
-        private Socket socketWatch = null;
+     
+        private Dictionary<string ,Socket> dict=new Dictionary<string, Socket>();
+        static Semaphore sem = new Semaphore(1, 1);
 
         public FormChatServer()
         {
-            InitializeComponent();
-            TextBox.CheckForIllegalCrossThreadCalls = false;
+            InitializeComponent();           
         }
         private void btnListen_Click(object sender, EventArgs e)
         { 
-            socketWatch = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+         
 
+            string[] str_ports = { "8090", "9001", "9002", "9003", "9004", "9005", "9006" };
+            string str_adress = "127.0.0.1";
+            foreach (string str_port in str_ports)
+            {
+                TaskFactory taskfactory = new TaskFactory();
+                taskfactory.StartNew(n => {
+                    OnesocateStart(str_adress, str_port);
+                }, TaskCreationOptions.None);
+
+            }
+                       
+        }
         
-            IPAddress zxz_ip = IPAddress.Parse("127.0.0.1");
-     
-            IPEndPoint ippoint = new IPEndPoint(zxz_ip, int.Parse(this.txtPort.Text.Trim()));
-       
-            socketWatch.Bind(ippoint);
-           
-            socketWatch.Listen(1);
-      
-            //Socket sockConnection=socketWatch.Accept();       
 
-            threadWatch = new Thread(WatchConnection);
-            threadWatch.IsBackground = true;
-            threadWatch.Start();
-            ShowMsg("------start the server------");
+        void OnesocateStart(string str_adress, string str_port)
+        {
+
+   
+           IPAddress zxz_ip = IPAddress.Parse(str_adress);
+
+            IPEndPoint ippoint = new IPEndPoint(zxz_ip, int.Parse(str_port));
+            Socket socketWatch = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            socketWatch.Bind(ippoint);
+
+            socketWatch.Listen(1);
+            WatchConnection(socketWatch);
+
+            this.ShowMsg("------start the server------" + str_port);
         }
 
         //private Socket sockConnection = null;
-   
-        void WatchConnection()
+
+        void WatchConnection(Socket socketWatch)
         {
             while (true)
             {
-         
-                Socket sockConnection = socketWatch.Accept();
-           
+
+                sem.WaitOne();
+                Socket sockConnection = socketWatch.Accept();           
                 dict.Add(sockConnection.RemoteEndPoint.ToString(),sockConnection);
-               
+
+                sem.Release();
                 BindListBox();
             
                 Thread t = new Thread(RecMsg);
@@ -65,7 +76,7 @@ namespace AMCserver
                 t.IsBackground = true;
         
                 t.Start(sockConnection);
-                ShowMsg("-----" + sockConnection.RemoteEndPoint.ToString() + ":client in-----");
+                this.ShowMsg("-----" + sockConnection.RemoteEndPoint.ToString() + ":client in-----");
             }           
      
         }
@@ -86,18 +97,20 @@ namespace AMCserver
                    
                     string strMsgRec = System.Text.Encoding.UTF8.GetString(arrMsgRec, 0, length);             
 
-                    ShowMsg(strMsgRec);
                     //texttoEnvoye = strMsgRec;            
                     Serilisationxml serilise = new Serilisationxml();
 
-                    serilise.Serilise(this.MacAdresInput.Text, this.DoorStatuInput.Text, this.LockStatInput.Text);
+
+
+                    Stream streamXML = serilise.Serilise(socketClient.LocalEndPoint.ToString());
 
                     for (int a = 10; a < 20; a = a + 1)
                     {
-                        senttoClient(FileTOByte("TestServer.xml"));
+                        senttoClient(FileTOByte(streamXML));
                         Thread.Sleep(1000 * 60);
-                    }
 
+                    }
+                    
 
                 }
                 catch (Exception e)
@@ -169,13 +182,14 @@ namespace AMCserver
             }   
         }
 
-        static byte[] FileTOByte(String path)
+        static byte[] FileTOByte(Stream streamXML)
         {
 
-            FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read);
-            byte[] infbytes = new byte[(int)fs.Length]; 
-            fs.Read(infbytes, 0, infbytes.Length); 
-            fs.Close(); 
+            //FileStream fs = new FileStream(streamXML, FileMode.Open, FileAccess.Read);
+            byte[] infbytes = new byte[(int)streamXML.Length];
+            streamXML.Read(infbytes, 0, infbytes.Length);
+            string x = streamXML.ToString();
+            streamXML.Close(); 
             return infbytes;
         }
 
